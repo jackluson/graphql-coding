@@ -1,69 +1,129 @@
+
 const express = require('express');
 const graphqlHTTP = require('express-graphql');
-// const { introspectionQuery } = require("graphql");
-const _graphql = require('graphql');
-const fetch = require("node-fetch");
-const fs = require("fs");
 const UserRepository = require('./user-repository')
+const RoleRepository = require('./role-repository');
 
-const { graphql, buildSchema, getIntrospectionQuery } = _graphql;
 const userRepository = new UserRepository();
+const roleRepository = new RoleRepository();
+const {
+    GraphQLObjectType,
+    GraphQLNonNull,
+    GraphQLInt,
+    GraphQLString,
+    GraphQLList,
+    GraphQLSchema
+} = require('graphql');
 
-// 使用 GraphQL Schema Language 创建一个 schema
-console.log('getIntrospectionQuery', getIntrospectionQuery)
-console.log('userRepository', userRepository)
-var schema = buildSchema(`
-  "A user ."
-  type User {
-    id: Int!
-    login: String!
-    firstName: String!
-    lastName: String!
+const RoleType = new GraphQLObjectType({
+  name: 'Role',
+  fields: {
+    id: {
+        type: new GraphQLNonNull(GraphQLInt)
+    },
+    name: {
+        type: new GraphQLNonNull(GraphQLString)
+    },
   }
-  "The root of it all."
-  
-  type Query {
-    "Returns a list of users."
-    users: [User],
-    hello: String,
-    "Returns a single user matching an ID."
-    user(id: Int!): User
-  }
-
-`);
+});
 
 
-// fetch("https://graphql-coding.jackluson.repl.co/graphql", {
-//   method: "POST",
-//   headers: { "Content-Type": "application/json" },
-//   body: JSON.stringify({ query: getIntrospectionQuery() })
-// })
-//   .then(res => res.json())
-//   .then(res =>
-//     fs.writeFileSync("result.json", JSON.stringify(res.data, null, 2))
-//   );
+const UserType = new GraphQLObjectType({ // complex type (with fields)
+    name: 'User',
+    fields: {
+        id: {
+            type: new GraphQLNonNull(GraphQLInt) // non-nullable integer
+        },
+        login: {
+            type: new GraphQLNonNull(GraphQLString) // non-nullable string
+        },
+        firstName: {
+            type: new GraphQLNonNull(GraphQLString) 
+        },
+        lastName: {
+            type: new GraphQLNonNull(GraphQLString)
+        },
+        roles: {
+          type: RoleType,
+          resolve:(user)=> {
+            return roleRepository.findByUserId(user.id);
+          }
+        }
+    }
+});
 
-// root 提供所有 API 入口端点相应的解析器函数
-var root = {
-  users: () => {
-    const users = userRepository.findAll();
-    console.log('users', users)
-    return users;
-  },
-  user:(params) => {
-    console.log('params',params)
-    return userRepository.getOneById(params.id);
-  },
-  hello: ()=> {
-    return 'Hello World!'
-  }
-};
+const QueryType = new GraphQLObjectType({
+    name: 'Query',
+    fields: {
+        users: {
+            type: new GraphQLList(UserType), // a list of users
+            resolve: () => {
+                return userRepository.findAll();
+            }
+        },
+        user: {
+            type: UserType,
+            args: {
+                id: {
+                    type: new GraphQLNonNull(GraphQLInt)
+                }
+            },
+            /* in this notation, the resolver function takes the
+             * parent object as first parameter, and the arguments
+             * as second.
+             */
+            resolve: (user, args) => { 
+                return userRepository.findOneById(args.id);
+            }
+        }
+    }
+});
+
+const MutationType = new GraphQLObjectType({
+    name: 'Mutation',
+    fields: {
+        createUser: {
+          type: UserType,
+            args: {
+                login: {
+                    type: new GraphQLNonNull(GraphQLString)
+                },
+                firstName: {
+                    type: new GraphQLNonNull(GraphQLString)
+                },
+                lastName: {
+                    type: new GraphQLNonNull(GraphQLString)
+                },
+            },
+            resolve: (root, args) => {
+                console.log('args', args)
+                return userRepository.create(args);
+            }
+        }
+    }
+});
+
+/* 4. Stitch everything together.
+ */
+const schema = new GraphQLSchema({
+    query: QueryType,
+    mutation: MutationType
+});     
+
+/* 5. Update the GraphQL middleware options.
+ */
 
 var app = express();
 app.use('/graphql', graphqlHTTP.graphqlHTTP({
-  schema: schema,
-  rootValue: root,
-  graphiql: true,
+    schema,
+    graphiql: true,
 }));
+
+
+// app.use('/graphql', graphqlHTTP.graphqlHTTP({
+//   schema: schema,
+//   rootValue: root,
+//   graphiql: true,
+// }));
 app.listen(4000);
-console.log('Running a GraphQL API server at http://localhost:4000/graphql');
+console.log('Running a GraphQL API server at http://localhost:4000/graphql'); 

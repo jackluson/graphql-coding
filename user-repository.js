@@ -16,6 +16,19 @@ module.exports = class UserRepository {
     }
     
     getOneById(id) {
-      return users.find(item => item.id = id)
+      return users.find(item => item.id === id)
+    }
+
+    create({login,firstName, lastName }){
+      const tempUser = {
+        login,
+        firstName,
+        lastName,
+        id: users[users.length-1].id + 1
+      }
+      users.push(tempUser);
+      console.log("tempUser", tempUser)
+      return tempUser
+
     }
 }
